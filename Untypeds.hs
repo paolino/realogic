@@ -25,6 +25,7 @@ instance Show Serial where
 
 instance Read Serial where
 	readPrec = fmap Serial . lift $ do
+		skipSpaces
 		char '{'
 		s <- 	do
 				(s::String) <- readS_to_P  reads
@@ -34,8 +35,8 @@ instance Read Serial where
 		return s
 
 -- | Try to parse a string into a Serial box. It needs some hints on which types could go inside the box
-parseSerial y  = listToMaybe . mapMaybe (parseSerial' y) where
+parseSerial ss y  = fmap fst . listToMaybe . mapMaybe (parseSerial' y) $ ss where
 	parseSerial' (Serial y) (Serial x) = join $ 
 		listToMaybe <$> map (first (Serial . (`asTypeOf` x))) <$> reads <$> cast y 
 
-
+type ParseSerial a = (Serial -> Maybe Serial) -> a  -> Maybe a

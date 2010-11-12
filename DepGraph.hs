@@ -11,6 +11,7 @@ import Test.QuickCheck
 import Debug.Trace
 import Control.Monad (replicateM)
 import Data.Maybe
+import Control.Arrow ((***))
 
 
 -- | insieme di elementi di tipo a indicizzati da b e legati alle loro dipendenze, ovvero grafo delle dipendenze
@@ -55,5 +56,5 @@ makeDG = restore []
 restore :: DepGraph' a Int -> DepGraph a
 restore dg' = assert (coherent dg') $ create ((+1) . maximum . (-1:) $ map fst dg') dg' where
 	create n xs = DepGraph (add' n xs) (resize' n xs) (map (fst.snd) $ sortBy (comparing fst) xs)
-	add' n xs x = (n + 1, create (n + 1) ((n,x):xs))
+	add' n xs x = (n , create (n + 1) ((n,x):xs))
 	resize' n xs ys = create n <$> correct xs ys

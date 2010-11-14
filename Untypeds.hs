@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExistentialQuantification, UnicodeSyntax #-}
+{-# LANGUAGE ScopedTypeVariables, TypeFamilies,ExistentialQuantification, UnicodeSyntax #-}
 
 module Untypeds  where
 
@@ -34,9 +34,14 @@ instance Read Serial where
 		char '}'
 		return s
 
+toUntyped :: Serial -> Untyped
+toUntyped (Serial x) = Untyped x
+
 -- | Try to parse a string into a Serial box. It needs some hints on which types could go inside the box
 parseSerial ss y  = fmap fst . listToMaybe . mapMaybe (parseSerial' y) $ ss where
 	parseSerial' (Serial y) (Serial x) = join $ 
 		listToMaybe <$> map (first (Serial . (`asTypeOf` x))) <$> reads <$> cast y 
 
 type ParseSerial a = (Serial -> Maybe Serial) -> a  -> Maybe a
+
+	

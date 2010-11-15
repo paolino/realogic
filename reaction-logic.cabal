@@ -7,7 +7,7 @@ license-file: LICENSE
 maintainer: Paolo Veronelli <paolo.veronelli@gmail.com> 
 stability: unstable
 category: reactivity
-synopsis: event driven reactions
+synopsis: pluggable pure logic serializable reactor
 description: A library to help write reaction drivers where a reaction can produce new reactions and events upon receiving an event. This library focuses on logic and serialization.
 homepage: http://wiki.github.com/paolino/realogic
 copyright: Copyright (c) 2010 Paolo Veronelli 
@@ -18,11 +18,14 @@ cabal-version: >= 1.6
 Library
 
   exposed-modules:
+   Data.Reactor.MinimalGraph
+   Data.Reactor.Pruned
    Data.Reactor
 
   ghc-options: -Wall 
   build-depends: base  >=4.2   , 
-                 mtl         
+                 mtl         ,
+                 QuickCheck >= 2
 
 Executable reaction-logic-test
   main-is:         Test.hs

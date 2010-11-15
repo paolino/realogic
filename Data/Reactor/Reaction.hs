@@ -1,10 +1,10 @@
 {-# LANGUAGE  	ExistentialQuantification, 
 		UnicodeSyntax, DeriveFoldable, DeriveFunctor, 
-		DeriveTraversable, TupleSections,
-		MultiParamTypeClasses
+		DeriveTraversable
 		#-}
-
-module Data.Reactor.Reaction  (Rea (..) , stepRea, External, Internal, Recover, Response (..)) 
+-- | Reaction box and stepping function. 'Reaction's leave the monad parameter free for the programmer. Around m a state transformer gives them the chance to use per reaction state.
+module Data.Reactor.Reaction  (Reaction (..) , step, External, Internal, Recover
+	, Response (..), prop_data_reactor_reaction) 
 	where
 
 import Data.Typeable (Typeable, cast)
@@ -13,48 +13,74 @@ import Control.Applicative ((<$>))
 
 import Data.Reactor.Untypeds (Serial , Untyped (Untyped))
 
+import Test.QuickCheck
+import Control.Monad.Identity (runIdentity)
+import Control.Monad.State (modify, foldM) 
 
--- | Internal events are untyped, and not necessarily serializable
+-- | Internal event, don't need to be serializable
 type Internal = Untyped
 
--- | external events are untyped, and must be serializable
+-- | External event, it must be serializable
 type External = Serial
 
--- | internal state serializations for reactions are untyped
+-- | Internal state serializations, it must be serializable
 type Recover = Serial
 
--- | The value Rea objects must return.
+-- | The value reactions compute.
 data Response m = Response { 
-	continue :: Bool ,			-- ^ True to continue the reaction, or False if reaction if dead
-	newreas :: [Rea m] , 		-- ^ a list of new reactions, just borned ready for the next event
-	newevents :: [Internal] 		-- ^ some events to broadcast now as effects of the reaction
+	continue :: Bool ,		-- ^ True to continue the reaction, or False if reaction if dead
+	newreas :: [Reaction m] , 	-- ^ a list of new reactions, just borned ready for the next event
+	newevents :: [Internal] 	-- ^ some events to broadcast now as effects of the reaction
 	}
--- | Rea is the main interface to this module. It's exixtentially typed in the type of value to react and in its internal state.
-data Rea m  = forall a b . (Typeable a, Show b, Read b, Typeable b) => Rea {
-	-- | the next reaction to an event of type 'a'. The reaction can modify its individual state in the outer 
-	-- monad layer. There is no constraint on the inner monad.
-		reaCtion :: a -> StateT b m (Response m) 
-	-- | the internal state of the reaction , everything closed
-	,	reaState :: b			
+-- | A Reaction object is a container for a reaction. It's free in the type of value to react and in its internal state.
+data Reaction m  = forall a b . (Typeable a, Show b, Read b, Typeable b) => Reaction {
+	-- | The reaction to an event of type 'a'. It can modify its individual state in the outer monad layer. There are no constraint on the inner monad.
+		reaction :: a -> StateT b m (Response m) 
+	-- | Internal state of the reaction. Upon creation it must contatin the initial state.
+	,	reastate :: b			
 	}
 
 
--- try a reaction of a Rea, given an event presented in an Untyped box. If the event is not of the right type, the result is Nothing, otherwise an action in the monad m returning a modified Response, with Bool mapped to Maybe (Rea m).
-stepRea :: (Monad m, Functor m) 
-	=> Rea m 		-- reaction to try
-	-> Internal 		-- event
+-- | Try a reaction of a Reaction, given an event in an Untyped box. If the event is not of the right type, the result is Nothing, otherwise an action in the monad m returning a modified 'Response', with Bool mapped to Maybe (Reaction m).
+step :: (Monad m, Functor m) 
+	=> Reaction m 		-- ^ reaction box containing the reaction to try 
+	-> Internal 		-- ^ the event for the reaction
 	-> Maybe (m 	(
-			[Rea m], -- new reactors
-			[Internal], -- new events
-			Maybe (Rea m) -- possibly a renewed rea, or Nothing if the reaction is dead
+			[Reaction m], 
+			[Internal], 
+			Maybe (Reaction m) 
 			)
-		)
-stepRea (Rea f b) (Untyped x) = k <$> cast x where
+		) -- ^ new reactions, events and possibly a renewed Reaction, or Nothing if the reaction is dead
+
+step (Reaction f b) (Untyped x) = k <$> cast x where
 	k x' = do
 		(Response t xs ys, b') <- runStateT (f x') b
-		return (xs,ys, if t then Just $ Rea f b' else Nothing)
-		
-	
+		return (xs,ys, if t then Just $ Reaction f b' else Nothing)
+
+
+
+-------------- quick check property --------------------------		
+prop_data_reactor_reaction :: Gen Bool
+
+prop_data_reactor_reaction = do
+	ms <- listOf (elements [1..10::Int])
+	let 	r = Reaction (\y -> modify (+ y) >> return (Response True [] [])) (0::Int) 
+		ck Nothing  _ = return Nothing
+		ck (Just r') x = do 
+				let k = step r' x
+				case k of 
+					Nothing -> return Nothing
+					Just k' -> do
+						(_,_,mr) <- k'
+						return mr
+		ef = foldM ck (Just r) $ map Untyped ms
+		q = case runIdentity ef of 
+			Just (Reaction _ z) -> case cast z of
+				Just z' ->  z' == sum ms
+				Nothing -> False
+			Nothing -> False
+	return q
+
 	
 
 	

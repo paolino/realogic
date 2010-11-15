@@ -1,81 +1,110 @@
-module Data.Reactor  (Reactor (..), makeReactor,  
-	-- reexports
-	External, Internal, Serial (..), Rea (..), 
-	parseSerialReactor, Response (..)) where
+{-# LANGUAGE ScopedTypeVariables #-}
+-- | A reactor is an object to hold a bunch of reactions, which create other reactions and events and respond to events.
+module Data.Reactor   (Reactor (..), mkReactor) where
 
+import Data.List (nub)
 import Data.Maybe (fromMaybe, catMaybes)
-import Control.Monad (foldM, ap) 
+
 import Control.Applicative ((<$>))
-import Control.Monad.State (MonadState,get,put)
+
+import Control.Monad (foldM, ap) 
+
+import Control.Monad.State (MonadState, get, put)
+import Control.Monad.Writer (runWriterT, listen) 
+import Control.Monad.Reader (local, runReaderT)
+
 import Control.Arrow (second)
 
-import Data.Reactor.Reaction (External)
-import Data.Reactor.DepGraph (DepGraph, makeDG, values)
-import Data.Reactor.Node (mkNode)
-import Data.Reactor.OpNode (OpNode, react, contextualize, pokeNode)
-import Data.Reactor.Operational (Operational (..))
-import Data.Reactor.Serialization (Serialization, SerialReactor, insertSerialization, purgeSerialization)
+import Data.Reactor.Untypeds (toUntyped)
+import Data.Reactor.Reaction (External, Recover, Reaction)
+import Data.Reactor.MinimalGraph (Index, MinimalGraph(..), mkMinimalGraph)
+import Data.Reactor.Pruned (Pruned (..), expand, serialize, restore)
+import Data.Reactor.Operational  (OperationalLayer, Operational (..), mkOperationalPruned)
+import Data.Reactor.Serialization (Serialization, SerialReactor)
 
--- reexports only ---------
-
-import Data.Reactor.Reaction (Rea (..), Internal, Response (..))
-import Data.Reactor.Serialization (parseSerialReactor)
-import Data.Reactor.Untypeds (Serial (..))
+-- a Pruned object for Operationals
+type ReaTree m = Pruned (OperationalLayer m) (Maybe Recover,[Index])
 
 
--- | the operative interface to use some evolving reactions
+-- | The reactor object. Once created this closures control its lifecycle. Updaters return Nothing when the reactor is wrapped around no reactions.
 data Reactor m c = Reactor {
-	-- | update itself digesting a new event
+	-- | Update itself digesting a new event
 	insertExternals :: [External] -> m (Maybe (Reactor m c)), 
-	-- | restore to a given serialization
+	-- | Regenerate itself from a serialization
 	restoreReactor :: SerialReactor c -> m (Maybe (Reactor m c)),
-	-- | expose its internals, for later restoring
+	-- | Serialize its internals, for later restoring.
 	serializeReactor :: SerialReactor c
 	}
 
+serialize' :: ReaTree m -> ([Maybe Recover], [Index])
+serialize'  = second (concat) . unzip . serialize
 
--- | build a reactor object  from a list of basic reactions
-makeReactor :: (Functor m, MonadState c m) 
-	=> [Rea m] 	-- ^ list of base reactions
-	-> Reactor m c	-- ^ a fresh reactor object
+insertSerialization 	:: c 		--  reactor global state
+			-> External 	--  event to happen 
+			-> [ReaTree m] 	--  reaction trees
+			-> Serialization c --  serialization object
+			-> (Index,Serialization c) --  updated object
 
-makeReactor = fromMaybe (error "cannot make a reactor with no base reactions") . (new `ap` zero)
+insertSerialization c e xs (MinimalGraph add' _ _) = let (mrs,iss) = unzip $ map serialize' xs in 
+		add' ((c,e,mrs),nub . concat $ iss)
+
+purgeSerialization :: [ReaTree m] ->  Serialization c -> Maybe (Serialization c)
+purgeSerialization ns (MinimalGraph _ resize' _) = resize' (nub . concat . map (snd . serialize') $ ns)
+
+
 
 -- wrap a reaction 
-zeroNode :: Rea m -> OpNode m
-zeroNode r =  mkNode (Operational Nothing (Right r))
+mkReaTree ::(Monad m, Functor m) =>  Reaction m -> ReaTree m
+mkReaTree r =  mkOperationalPruned $ Operational Nothing (Right r)
 
 -- create the reactor object closure
-zero :: [Rea m] -> (Serialization c,[OpNode m])
-zero rs = (makeDG,map zeroNode rs)	
-
--- create a reactor object from the closure. Fails if the OpNode list is empty, which means all reactions are over
-new :: (Functor m, MonadState c m) => [Rea m] -> (Serialization c,[OpNode m]) -> Maybe (Reactor m c)
+zero :: (Monad m, Functor m) => [Reaction m] -> (Serialization c,[ReaTree m])
+zero rs = (mkMinimalGraph, map mkReaTree rs)	
+-- create a reactor object from the closure. Fails if the ReaTree list is empty, which means all reactions are over
+new :: (Functor m, MonadState c m) => [Reaction m] -> (Serialization c,[ReaTree m]) -> Maybe (Reactor m c)
 new rs (dg,ns) = case ns of
 	[] -> Nothing
-	_ -> Just $ Reactor (insert rs (dg',ns)) (restore rs) (map (fst . contextualize) ns, values dg') 
+	_ -> Just $ Reactor (insert rs (dg',ns)) (restore' rs) (map (fst . serialize') ns, values dg') 
 	where dg' = fromMaybe 
 			(error "Restore graph reduction failed")
 			$ purgeSerialization ns dg 
 
 -- create a new reactor restoring from a serialization
-restore :: (Functor m, MonadState c m) => [Rea m] -> SerialReactor c -> m (Maybe (Reactor m c))
-restore rs (actual,ecs) = new rs <$> second (ctxz actual) <$> foldM k (zero rs) ecs where
-	ctxz mrs ns = map pokeNode $ zip mrs ns
+restore' :: forall m c . (Functor m, MonadState c m) => [Reaction m] -> SerialReactor c -> m (Maybe (Reactor m c))
+restore' rs (actual,ecs) = new rs <$> second (ctxz actual) <$> foldM k (zero rs) ecs where
+	ctxz :: [[Maybe Recover]] -> [ReaTree m] -> [ReaTree m]
+	ctxz mrs ns = map (\(mr,n) -> restore n $ zip mr $ error "restoring dependencies") $ zip mrs ns
 	k (dg,ns) (c,e,mrs) = if length mrs /= length ns 
 		then error "Restore failed in the numbers of base reactions" 
 		else do put c 
 			insert' (dg,ctxz mrs ns) e
 
 -- create a reactor from the closure inserting some events
-insert :: (Functor m, MonadState c m) => [Rea m] -> (Serialization c,[OpNode m]) -> [External] -> m (Maybe (Reactor m c))
+insert :: (Functor m, MonadState c m) => [Reaction m] -> (Serialization c,[ReaTree m]) -> [External] -> m (Maybe (Reactor m c))
 insert rs (dg,ns) es = new rs <$> foldM insert' (dg,ns) es
 
 -- insert one event updating the closure
-insert' :: (Functor m, MonadState c m) => (Serialization c,[OpNode m]) -> External -> m (Serialization c,[OpNode m])
+insert' :: (Functor m, MonadState c m) => (Serialization c,[ReaTree m]) -> External -> m (Serialization c,[ReaTree m])
 insert' (dg,ns) e = do
 	c <- get
 	let (i,dg') = insertSerialization c e ns dg
 	ns' <- catMaybes <$> mapM (react (i,e)) ns 
 	return (dg' ,ns') 
 
+-- core reaction. Consumes all events , the firestarter and recursively all the produced events
+react :: (Monad m, Functor m) =>   (Index,External) -> ReaTree m  -> m (Maybe (ReaTree m))
+react (i,e) p = fmap fst . runWriterT . flip runReaderT (i,toUntyped e) $ z (Just p) where
+	z Nothing  = return Nothing
+	z (Just p') = do
+		(p'',es) <- listen $ expand p'
+		if null es then return p'' else case p'' of
+			Nothing -> return Nothing -- information leak	
+			p''' -> let k mp e' = local (\(i',_) -> (i',e')) $ z mp
+				in foldM k p''' es
+
+-- | build a reactor object  from a list of basic reactions
+mkReactor :: (Functor m, MonadState c m) 
+	=> [Reaction m] 	-- ^ list of base reactions
+	-> Reactor m c	-- ^ a fresh reactor object
+
+mkReactor = fromMaybe (error "cannot make a reactor with no base reactions") . (new `ap` zero)

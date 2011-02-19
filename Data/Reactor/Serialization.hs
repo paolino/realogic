@@ -1,13 +1,11 @@
 
 module Data.Reactor.Serialization (parseSerialReactor, SerialReactor, Serialization) where
 
-import Data.List (nub)
 import Control.Monad (forM)
 
 import Data.Reactor.Untypeds (ParseSerial)
 import Data.Reactor.MinimalGraph (MinimalGraph (..))
 import Data.Reactor.Reaction (External, Recover)
-import Data.Reactor.Operational -- (Index)
 
 type ReactionStates = [[Maybe Recover]]
 

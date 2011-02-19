@@ -12,7 +12,7 @@ import Data.Reactor.Pruned (prop_data_reactor_pruned)
 import Data.Reactor.Reaction (prop_data_reactor_reaction) 
 
 
-main = mapM_ (quickCheckWith (Args {replay = Nothing, maxSuccess = 200, maxDiscard = 500, maxSize = 100})) 
+main = mapM_ quickCheck 
 	[	prop_data_reactor_reaction,
 		prop_data_reactor_pruned,
 		prop_data_reactor_minimalgraph	

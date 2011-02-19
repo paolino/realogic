@@ -1,7 +1,7 @@
 
 
 name: reaction-logic
-version: 2010.11.14
+version: 2010.11.17
 license: BSD3
 license-file: LICENSE
 maintainer: Paolo Veronelli <paolo.veronelli@gmail.com> 
@@ -20,15 +20,19 @@ Library
   exposed-modules:
    Data.Reactor.MinimalGraph
    Data.Reactor.Pruned
+   Data.Reactor.Reaction
+   Data.Reactor.Operational
+   Data.Reactor.Serialization
+   Data.Reactor.Untypeds
    Data.Reactor
 
   ghc-options: -Wall 
-  build-depends: base  >=4.2   , 
+  build-depends: base  >= 4.2 && < 5  , 
                  mtl         ,
                  QuickCheck >= 2
 
 Executable reaction-logic-test
   main-is:         Test.hs
-  build-depends:   base >= 4.2,
+  build-depends:   base >= 4.2 && < 5,
                    QuickCheck >= 2,
                    mtl

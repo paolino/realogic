@@ -9,7 +9,7 @@ import Control.Monad.Writer (WriterT, tell)
 import Control.Monad.Reader (ReaderT, ask)
 
 import Data.Reactor.Untypeds (Serial (Serial))
-import Data.Reactor.Reaction (Reaction (..), step, Internal, Recover)
+import Data.Reactor.Reaction (Reaction (..), step, Internal)
 import Data.Reactor.MinimalGraph (Index)
 import Data.Reactor.Pruned (mkPruned, Pruned)
 
@@ -34,7 +34,7 @@ mkOperationalPruned :: (Functor m, Monad m)
 mkOperationalPruned = mkPruned opexpand opprune oprestore opserialize where
 	opexpand :: (Functor m, Monad m) => Operational m -> OperationalLayer m (Operational m, [Operational m])
 	opexpand c@(Operational _ (Left _)) = return (c,[]) 
-	opexpand (Operational borned (Right r)) = do 
+	opexpand (Operational borned' (Right r)) = do 
 		(i,e) <- ask
 		(ad,xs') <- case step r e of
 			Nothing -> return $ (Right r,[])
@@ -42,7 +42,7 @@ mkOperationalPruned = mkPruned opexpand opprune oprestore opserialize where
 				(xs,es,mrea) <- lift k
 				tell es
 				return (maybe (Left i) Right mrea, xs)
-		return (Operational borned ad,map (Operational (Just i) . Right) xs')
+		return (Operational borned' ad,map (Operational (Just i) . Right) xs')
 
 	opserialize (Operational (Just i) (Right (Reaction _ v))) = (Just (Serial v),[i])
 	opserialize (Operational (Just i) (Left j)) = (Nothing, [i,j])
@@ -53,7 +53,7 @@ mkOperationalPruned = mkPruned opexpand opprune oprestore opserialize where
 		Nothing -> error "Restoring type corrupt"
 		Just b' -> Operational bnd (Right (Reaction f b'))
 	oprestore _ (Just _,_)  = error "Restoring a state to to dead reaction"
-	oprestore  (Operational _ (Right (Reaction f _))) (Nothing,_) = error "No state to restore an operational"
+	oprestore  (Operational _ (Right _)) (Nothing,_) = error "No state to restore an operational"
 	oprestore c (Nothing,_)  = c
 
 	opprune (Operational _ (Left _)) = True

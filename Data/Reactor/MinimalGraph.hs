@@ -6,8 +6,6 @@ module Data.Reactor.MinimalGraph (Index, MinimalGraph (..), mkMinimalGraph, prop
 import Data.List ((\\), union, nub,sortBy)
 import Data.Ord (comparing)
 import Control.Applicative ((<$>))
-import Control.Exception (assert)
-import Control.Monad (replicateM)
 
 
 import Test.QuickCheck hiding (resize)
@@ -55,10 +53,12 @@ mkMinimalGraph  =  create 0 [] where
 prop_data_reactor_minimalgraph :: Gen Bool
 prop_data_reactor_minimalgraph = all id `fmap` sequence [coherent]
 
+unions :: Eq a => [[a]] -> [a]
 unions = foldr union []
 
+coherent :: Gen Bool
 coherent = do
-	top <- elements [0..500]
+	top <- elements [0..500::Int]
 	let  k (rs,dg) x = do
 		let ts = unions $ map snd rs
 		zs <- if null ts then return [] else nub <$> listOf (elements ts)

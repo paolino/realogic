@@ -15,32 +15,32 @@ import Control.Monad.Reader (local, runReaderT)
 
 import Control.Arrow (second)
 
-import Data.Reactor.Untypeds (toUntyped)
-import Data.Reactor.Reaction (External, Recover, Reaction)
+import Data.Reactor.Untypeds (toUntyped, Serial)
+import Data.Reactor.Reaction ( Reaction)
 import Data.Reactor.MinimalGraph (Index, MinimalGraph(..), mkMinimalGraph)
 import Data.Reactor.Pruned (Pruned (..), expand, serialize, restore)
 import Data.Reactor.Operational  (OperationalLayer, Operational (..), mkOperationalPruned)
 import Data.Reactor.Serialization (Serialization, SerialReactor)
 
 -- a Pruned object for Operationals
-type ReaTree m = Pruned (OperationalLayer m) (Maybe Recover,[Index])
+type ReaTree m = Pruned (OperationalLayer m) (Maybe Serial,[Index])
 
 
 -- | The reactor object. Once created this closures control its lifecycle. Updaters return Nothing when the reactor is wrapped around no reactions.
 data Reactor m c = Reactor {
 	-- | Update itself digesting a new event
-	insertExternals :: [External] -> m (Maybe (Reactor m c)), 
+	insertExternals :: [Serial] -> m (Maybe (Reactor m c)), 
 	-- | Regenerate itself from a serialization
 	restoreReactor :: SerialReactor c -> m (Maybe (Reactor m c)),
 	-- | Serialize its internals, for later restoring.
 	serializeReactor :: SerialReactor c
 	}
 
-serialize' :: ReaTree m -> ([Maybe Recover], [Index])
+serialize' :: ReaTree m -> ([Maybe Serial], [Index])
 serialize'  = second (concat) . unzip . serialize
 
 insertSerialization 	:: c 		--  reactor global state
-			-> External 	--  event to happen 
+			-> Serial 	--  event to happen 
 			-> [ReaTree m] 	--  reaction trees
 			-> Serialization c --  serialization object
 			-> (Index,Serialization c) --  updated object
@@ -55,7 +55,7 @@ purgeSerialization ns (MinimalGraph _ resize' _) = resize' (nub . concat . map (
 
 -- wrap a reaction 
 mkReaTree ::(Monad m, Functor m) =>  Reaction m -> ReaTree m
-mkReaTree r =  mkOperationalPruned $ Operational Nothing (Right r)
+mkReaTree r = mkOperationalPruned $ Operational Nothing (Right r) 
 
 -- create the reactor object closure
 zero :: (Monad m, Functor m) => [Reaction m] -> (Serialization c,[ReaTree m])
@@ -72,7 +72,7 @@ new rs (dg,ns) = case ns of
 -- create a new reactor restoring from a serialization
 restore' :: forall m c . (Functor m, MonadState c m) => [Reaction m] -> SerialReactor c -> m (Maybe (Reactor m c))
 restore' rs (actual,ecs) = new rs <$> second (ctxz actual) <$> foldM k (zero rs) ecs where
-	ctxz :: [[Maybe Recover]] -> [ReaTree m] -> [ReaTree m]
+	ctxz :: [[Maybe Serial]] -> [ReaTree m] -> [ReaTree m]
 	ctxz mrs ns = map (\(mr,n) -> restore n $ zip mr $ error "restoring dependencies") $ zip mrs ns
 	k (dg,ns) (c,e,mrs) = if length mrs /= length ns 
 		then error "Restore failed in the numbers of base reactions" 
@@ -80,11 +80,11 @@ restore' rs (actual,ecs) = new rs <$> second (ctxz actual) <$> foldM k (zero rs)
 			insert' (dg,ctxz mrs ns) e
 
 -- create a reactor from the closure inserting some events
-insert :: (Functor m, MonadState c m) => [Reaction m] -> (Serialization c,[ReaTree m]) -> [External] -> m (Maybe (Reactor m c))
+insert :: (Functor m, MonadState c m) => [Reaction m] -> (Serialization c,[ReaTree m]) -> [Serial] -> m (Maybe (Reactor m c))
 insert rs (dg,ns) es = new rs <$> foldM insert' (dg,ns) es
 
 -- insert one event updating the closure
-insert' :: (Functor m, MonadState c m) => (Serialization c,[ReaTree m]) -> External -> m (Serialization c,[ReaTree m])
+insert' :: (Functor m, MonadState c m) => (Serialization c,[ReaTree m]) -> Serial -> m (Serialization c,[ReaTree m])
 insert' (dg,ns) e = do
 	c <- get
 	let (i,dg') = insertSerialization c e ns dg
@@ -92,7 +92,7 @@ insert' (dg,ns) e = do
 	return (dg' ,ns') 
 
 -- core reaction. Consumes all events , the firestarter and recursively all the produced events
-react :: (Monad m, Functor m) =>   (Index,External) -> ReaTree m  -> m (Maybe (ReaTree m))
+react :: (Monad m, Functor m) =>   (Index,Serial) -> ReaTree m  -> m (Maybe (ReaTree m))
 react (i,e) p = fmap fst . runWriterT . flip runReaderT (i,toUntyped e) $ z (Just p) where
 	z Nothing  = return Nothing
 	z (Just p') = do

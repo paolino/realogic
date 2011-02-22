@@ -1,15 +1,15 @@
 
-module Data.Reactor.Serialization (parseSerialReactor, SerialReactor, Serialization) where
+module Data.Reactor.Serialization ( parseSerialReactor, SerialReactor, Serialization) where
 
 import Control.Monad (forM)
 
-import Data.Reactor.Untypeds (ParseSerial)
+import Data.Reactor.Untypeds (ParseSerial, Serial)
 import Data.Reactor.MinimalGraph (MinimalGraph (..))
-import Data.Reactor.Reaction (External, Recover)
 
-type ReactionStates = [[Maybe Recover]]
 
-type SerialExternal c = (c,External,[[Maybe Recover]])
+type ReactionStates = [[Maybe Serial]]
+
+type SerialExternal c = (c,Serial,[[Maybe Serial]])
 
 -- | active serialization of a reactor
 type Serialization c = MinimalGraph (SerialExternal c) 
@@ -18,22 +18,21 @@ type Serialization c = MinimalGraph (SerialExternal c)
 type SerialReactor c = (ReactionStates,[SerialExternal c])
 
 parseReactionStates :: ParseSerial ReactionStates
-parseReactionStates ps mrs = forM mrs $ \rs -> forM rs $ maybe (Just Nothing) (fmap Just . ps)
+parseReactionStates sms mrs = forM mrs $ \rs -> forM rs $ maybe (Just Nothing) (fmap Just . sms ) 
 
 
 parseSerialExternal :: ParseSerial (SerialExternal c)
-parseSerialExternal ps (c,e,mrs) = do
-	e' <- ps e
-	mrs' <- parseReactionStates ps mrs
+parseSerialExternal sms (c,e,mrs) = do
+	e' <- sms  e
+	mrs' <- parseReactionStates sms mrs
 	return (c,e',mrs')
 
 -- | a SerialReactor parser. It tries to fix the existentials, in the Recover and External boxes. Possible templates must be given for the task.
 parseSerialReactor :: ParseSerial (SerialReactor c)
-parseSerialReactor ps (mrs,ss) = do
-	mrs' <- parseReactionStates ps mrs
-	ss' <- mapM (parseSerialExternal ps) ss
+parseSerialReactor sms (mrs,ss) = do
+	mrs' <- parseReactionStates sms mrs
+	ss' <- mapM (parseSerialExternal sms) ss
 	return (mrs',ss')
-
 
 
 

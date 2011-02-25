@@ -55,7 +55,7 @@ stepStepper (Stepper s) b x = stepStep s b x
 fStepSteppers :: (Monad m , Functor m) => Event -> Effect m b -> Stepper m b -> m (Effect m b)
 fStepSteppers x (rs,is,Nothing) s = return (rs,is,Nothing)
 fStepSteppers x (rs,is,Just b) s = case stepStepper s b x of
-	Nothing ->  return (rs,is,Nothing)
+	Nothing ->  return (rs,is,Just b) -- event ignored
 	Just f -> do
 		(rs',is',mb') <- f
 		return (rs ++ rs', is ++ is', mb')

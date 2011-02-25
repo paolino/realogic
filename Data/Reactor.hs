@@ -21,7 +21,7 @@ import Data.Reactor.MinimalGraph (Index, MinimalGraph(..), mkMinimalGraph)
 import Data.Reactor.Pruned (Pruned (..), expand, serialize, restore)
 import Data.Reactor.Operational  (OperationalLayer, Operational (..), mkOperationalPruned)
 import Data.Reactor.Serialization (Serialization, SerialReactor)
-
+import Debug.Trace
 -- a Pruned object for Operationals
 type ReaTree m = Pruned (OperationalLayer m) (Maybe Serial,[Index])
 
@@ -88,7 +88,7 @@ insert' :: (Functor m, MonadState c m) => (Serialization c,[ReaTree m]) -> Seria
 insert' (dg,ns) e = do
 	c <- get
 	let (i,dg') = insertSerialization c e ns dg
-	ns' <- catMaybes <$> mapM (react (i,e)) ns 
+	ns' <- catMaybes <$> mapM (react (i,trace (show e) e)) ( ns)
 	return (dg' ,ns') 
 
 -- core reaction. Consumes all events , the firestarter and recursively all the produced events

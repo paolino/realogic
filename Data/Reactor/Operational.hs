@@ -13,7 +13,6 @@ import Data.Reactor.Reaction (Reaction (..), step, Event)
 import Data.Reactor.MinimalGraph (Index)
 import Data.Reactor.Pruned (mkPruned, Pruned)
 
-
 -- | 'Reaction' contextualized with its history.
 data Operational m = Operational {
 	-- | Nothing if the reaction is a base reaction  or just an index to the contextualized event which borned it
@@ -36,9 +35,9 @@ mkOperationalPruned = mkPruned opexpand opprune oprestore opserialize where
 	opexpand c@(Operational _ (Left _)) = return (c,[]) 
 	opexpand (Operational my (Right r)) = do 
 		(i,e) <- ask
-		(xs,es,mr) <- lift . lift $ step e r 
+		(xs,es,mr) <-  lift . lift $ step e r 
 		tell es
-		return (Operational my $ maybe (Left i) Right mr, map (Operational (Just i) . Right) xs)
+		return (Operational my $ maybe ( Left i) Right mr, map (Operational (Just i) . Right) xs)
 	opserialize (Operational (Just i) (Right (Reaction _ v))) = (Just (Serial v),[i])
 	opserialize (Operational (Just i) (Left j)) = (Nothing, [i,j])
 	opserialize (Operational Nothing (Left j)) = (Nothing, [j])
@@ -51,6 +50,6 @@ mkOperationalPruned = mkPruned opexpand opprune oprestore opserialize where
 	oprestore  (Operational _ (Right _)) (Nothing,_) = error "No state to restore an operational"
 	oprestore c (Nothing,_)  = c
 
-	opprune (Operational _ (Left _)) = True
-	opprune  _ = False
+	opprune (Operational mj (Left i)) =  True
+	opprune  (Operational mj _) = False
 

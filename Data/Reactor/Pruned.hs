@@ -2,7 +2,8 @@
 {-# LANGUAGE   DeriveFoldable, DeriveFunctor, 
 		MultiParamTypeClasses, DeriveTraversable, NoMonomorphismRestriction		#-}
 
-module Data.Reactor.Pruned   (mkPruned , Pruned (..),  prop_data_reactor_pruned) where
+module Data.Reactor.Pruned   -- (mkPruned , Pruned (..),  prop_data_reactor_pruned) 
+	where
 
 import Data.Maybe (mapMaybe)
 import Data.Traversable (Traversable, mapAccumL)
@@ -10,6 +11,7 @@ import Data.Foldable (Foldable, toList)
 
 import Test.QuickCheck
 import Control.Monad.Identity
+import Debug.Trace
 
 -----------------------------------------------
 
@@ -25,7 +27,7 @@ data Node a = Node {
 prune 	:: (a -> Bool) 
 	-> Node a 		-- ^ node to judge
 	-> Maybe (Node a)	-- ^ the node judged with judged sons
-prune f n@(Node x []) = if f x then Nothing else Just n
+prune f n@(Node x []) =  if f x then Nothing else Just n
 prune f (Node x ns) = let ns' = mapMaybe (prune f) ns in 
 	if null ns' && f x then Nothing else Just (Node x ns')
 
@@ -34,10 +36,10 @@ expandM :: (Monad m)
 	=> (a -> m (a,[a]))
 	-> Node a 
 	-> m (Node a)
-expandM f (Node x ns) = do
+expandM f  (Node x ns) = do
 	(x',xs') <- f x 
-	ns' <- mapM (expandM f) ns
-	return $ Node x' (ns' ++ map (flip Node []) xs')
+	ns' <- mapM (expandM f ) ns
+	return $  Node x' (ns' ++ map (flip Node []) xs')
 
 serializeNode :: (a -> b ) -> Node a -> [b]
 serializeNode f = map f . toList
